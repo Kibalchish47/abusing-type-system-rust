@@ -7,139 +7,104 @@
 
 // Pointers: Map: value -> value
 
-// FromStr: {u8, u16, f64, f32, ... }
-// FromStr::Err {u8, u16, f64, f32 } -> { U8Error, U16Error, F64Error, }
-
-// FnOnce (trait) - functions that you can only call once.
-// FnMut (trait) - functions that
-// Fn (trait) - functions that can inspect their environment.
-// fn (trait, but also not) - pure functions.
-
 // Exercise for the reader: Implement boolean logic using only the type system.
 // Use the notes about Values, Types as sets of Values, Traits as sets of Types,
 // assoc. types as maps upon Types, etc. for your implementation.
+#![allow(nonstandard_style)]
+use std::marker::PhantomData;
 
-struct True;
-struct False;
-trait TRUE {}
-trait FALSE {}
+struct Ast;
+struct Eval;
+trait Mode {}
+impl Mode for Ast {}
+impl Mode for Eval {}
 
-impl TRUE for True {}
-impl FALSE for False {}
-
-pub enum Operations {
-    And,
-    Or,
-    Not,
-    Nand,
-    Nor,
+trait Boolean {}
+trait Formula {
+    type Output: Boolean + Formula;
 }
-mod sealed {
-    pub trait Boolean {}
-}
-use sealed::Boolean;
 
+enum True {}
 impl Boolean for True {}
+impl Formula for True {
+    type Output = Self;
+}
+
+enum False {}
 impl Boolean for False {}
-
-// AND
-trait And<Rhs: Boolean>: Boolean {
-    // Rhs = Right hand side
-    type Output: Boolean;
+impl Formula for False {
+    type Output = Self;
 }
 
-impl And<True> for True {
-    type Output = True;
-}
+// ast
+struct And<L: Formula, R: Formula, M: Mode = Ast>(
+    core::convert::Infallible,
+    core::marker::PhantomData<(*const M, fn(L, R))>,
+);
 
-impl And<False> for True {
-    type Output = False;
-}
-
-impl And<True> for False {
-    type Output = False;
-}
-
-impl And<False> for False {
-    type Output = False;
-}
-
-// OR
-trait Or<Rhs: Boolean>: Boolean {
-    // Rhs = Right hand side
-    type Output: Boolean;
-}
-
-impl Or<True> for True {
-    type Output = True;
-}
-
-impl Or<False> for True {
-    type Output = True;
-}
-
-impl Or<True> for False {
-    type Output = True;
-}
-
-impl Or<False> for False {
-    type Output = False;
-}
-
-// NOT
-trait Not: Boolean {
-    // Rhs = Right hand side
-    type Output: Boolean;
-}
-
-impl Not for True {
-    type Output = False;
-}
-
-impl Not for False {
-    type Output = True;
-}
-
-trait Implies<Rhs: Boolean>: Boolean {
-    type Output: Boolean;
-}
-
-impl<L: Boolean, R: Boolean> Implies<R> for L
+// eval
+impl<L: Formula, R: Formula> Formula for And<L, R>
 where
-    L: Not,
-    <L as Not>::Output: Or<R>, // What we're trying to write is "Not L or A = L -> A"
+    And<L::Output, R::Output, Eval>: Formula,
 {
-    type Output = <<L as Not>::Output as Or<R>>::Output;
+    type Output = <And<L::Output, R::Output, Eval> as Formula>::Output;
 }
-
-trait Equality<Rhs: Boolean>: Boolean {
-    // Rhs = Right hand side
-    type Output: Boolean;
-}
-
-impl Equality<True> for True {
+impl Formula for And<True, True, Eval> {
     type Output = True;
 }
-
-impl Equality<False> for True {
+impl Formula for And<False, True, Eval> {
+    type Output = False;
+}
+impl Formula for And<True, False, Eval> {
+    type Output = False;
+}
+impl Formula for And<False, False, Eval> {
     type Output = False;
 }
 
-impl Equality<True> for False {
-    type Output = False;
-}
-
-impl Equality<False> for False {
-    type Output = True;
-}
-
-fn test<L: Boolean, R: Boolean>()
+// ast
+struct Or<L: Formula, R: Formula, M: Mode = Ast>(
+    core::convert::Infallible,
+    core::marker::PhantomData<(*const M, fn(L, R))>,
+);
+// eval
+impl<L: Formula, R: Formula> Formula for Or<L, R>
 where
-    <L as And<R>>::Output: TRUE,
-    L: And<R>, // L implements R
+    Or<L::Output, R::Output, Eval>: Formula,
 {
+    type Output = <Or<L::Output, R::Output, Eval> as Formula>::Output;
+}
+impl Formula for Or<True, True, Eval> {
+    type Output = True;
+}
+impl Formula for Or<False, True, Eval> {
+    type Output = True;
+}
+impl Formula for Or<True, False, Eval> {
+    type Output = True;
+}
+impl Formula for Or<False, False, Eval> {
+    type Output = False;
 }
 
-fn main() {
-    test::<True, False>();
+struct Not<T: Formula, M: Mode = Ast>(
+    core::convert::Infallible,
+    core::marker::PhantomData<(M, fn(T))>,
+);
+
+impl<T: Formula> Formula for Not<T>
+where
+    Not<T::Output, Eval>: Formula,
+{
+    type Output = <Not<T::Output, Eval> as Formula>::Output;
 }
+impl Formula for Not<True, Eval> {
+    type Output = False;
+}
+impl Formula for Not<False, Eval> {
+    type Output = True;
+}
+
+struct Proof<F: Formula<Output = True>>(PhantomData<F>);
+
+type _0 = Proof<Not<Not<Or<False, And<True, And<True, True>>>>>>;
